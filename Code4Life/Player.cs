@@ -91,34 +91,6 @@ public class Player
     }
 }
 
-public class Sample
-{
-    public int SampleId { get; }
-    public int CarriedBy { get; }
-    public int Rank { get; }
-    public string ExpertiseGain { get; }
-    public int Health { get; }
-    public int CostA { get; }
-    public int CostB { get; }
-    public int CostC { get; }
-    public int CostD { get; }
-    public int CostE { get; }
-
-    public Sample(string[] inputs)
-    {
-        SampleId = int.Parse(inputs[0]);
-        CarriedBy = int.Parse(inputs[1]);
-        Rank = int.Parse(inputs[2]);
-        ExpertiseGain = inputs[3];
-        Health = int.Parse(inputs[4]);
-        CostA = int.Parse(inputs[5]);
-        CostB = int.Parse(inputs[6]);
-        CostC = int.Parse(inputs[7]);
-        CostD = int.Parse(inputs[8]);
-        CostE = int.Parse(inputs[9]);
-    }
-}
-
 public class MyHero
 {
     public enum RobotCmd
@@ -128,6 +100,8 @@ public class MyHero
         Gather,
         Produce
     }
+
+    private static Random RNG = new Random();
 
     private Sample targetSample;
 
@@ -142,15 +116,22 @@ public class MyHero
 
         if (targetSample == null)
         {
-            if (myRobot.Target != Modules.DIAGNOSIS.ToString())
+            if (myRobot.Samples.Count(s => s != null) == 0)
             {
-                command = "GOTO " + Modules.DIAGNOSIS;
+                if (myRobot.Target != Modules.SAMPLES.ToString())
+                {
+                    command = "GOTO " + Modules.SAMPLES;
+                }
+                else
+                {
+                    cmd = RobotCmd.Collect;
+                    command = "connect " + (int) (RNG.Next(2) + 1);
+                }
             }
             else
             {
-                targetSample = game.samples.Last(s => s.CarriedBy == -1);
-                cmd = RobotCmd.Collect;
-                command = "connect " + targetSample.SampleId;
+                targetSample = myRobot.Samples.First(s => s != null);
+                command = "GOTO " + Modules.MOLECULES;
             }
         }
         else if (AllMaterialsAcquired(myRobot, targetSample) == false)
@@ -163,41 +144,54 @@ public class MyHero
             }
             else
             {
-                if (myRobot.StorageA <= targetSample.CostA)
+                foreach (var moleculeType in Enum.GetValues(typeof(MoleculeType)))
                 {
-                    command = "connect A ";
-                    command += myRobot.StorageA + " / " + targetSample.CostA;
-                    command += " target id is " +targetSample.SampleId;
+                    int available = myRobot.Storage[(int) moleculeType];
+                    int needed = targetSample.Cost[(int) moleculeType];
+                    if (available <= needed)
+                    {
+                        command = "connect "+ moleculeType;
+                        command += available + "/" + needed;
+                        command += " target id is " +targetSample.SampleId;
+                    }
                 }
-                else
-                if (myRobot.StorageB <= targetSample.CostB)
-                {
-                    command = "connect B ";
-                    command += myRobot.StorageB + " / " + targetSample.CostB;
-                    command += " target id is " +targetSample.SampleId;
-                }
-                else
-                if (myRobot.StorageC <= targetSample.CostC)
-                {
-                    command = "connect C ";
-                    command += myRobot.StorageC + " / " + targetSample.CostC;
-                    command += " target id is " +targetSample.SampleId;
-
-                }
-                else
-                if (myRobot.StorageD <= targetSample.CostD)
-                {
-                    command = "connect D ";
-                    command += myRobot.StorageD + " / " + targetSample.CostD;
-                    command += " target id is " +targetSample.SampleId;
-                }
-                else
-                if (myRobot.StorageE <= targetSample.CostE)
-                {
-                    command = "connect E ";
-                    command += myRobot.StorageE + " / " + targetSample.CostE;
-                    command += " target id is " +targetSample.SampleId;
-                }
+//
+//
+//                if (myRobot.StorageA <= targetSample.CostA)
+//                {
+//                    command = "connect A ";
+//                    command += myRobot.StorageA + " / " + targetSample.CostA;
+//                    command += " target id is " +targetSample.SampleId;
+//                }
+//                else
+//                if (myRobot.StorageB <= targetSample.CostB)
+//                {
+//                    command = "connect B ";
+//                    command += myRobot.StorageB + " / " + targetSample.CostB;
+//                    command += " target id is " +targetSample.SampleId;
+//                }
+//                else
+//                if (myRobot.StorageC <= targetSample.CostC)
+//                {
+//                    command = "connect C ";
+//                    command += myRobot.StorageC + " / " + targetSample.CostC;
+//                    command += " target id is " +targetSample.SampleId;
+//
+//                }
+//                else
+//                if (myRobot.StorageD <= targetSample.CostD)
+//                {
+//                    command = "connect D ";
+//                    command += myRobot.StorageD + " / " + targetSample.CostD;
+//                    command += " target id is " +targetSample.SampleId;
+//                }
+//                else
+//                if (myRobot.StorageE <= targetSample.CostE)
+//                {
+//                    command = "connect E ";
+//                    command += myRobot.StorageE + " / " + targetSample.CostE;
+//                    command += " target id is " +targetSample.SampleId;
+//                }
             }
         } else
         {
@@ -229,6 +223,15 @@ public class MyHero
 
 }
 
+public enum MoleculeType
+{
+    A = 0,
+    B,
+    C,
+    D,
+    E
+}
+
 public class Game
 {
 
@@ -239,12 +242,15 @@ public class Game
     {
         this.robots = robots;
         this.samples = samples;
+
+        robots[0].Samples = samples.Where(s => s.CarriedBy == 1).ToArray();
+        robots[1].Samples = samples.Where(s => s.CarriedBy == 0).ToArray();
     }
 }
 
 public class Robot
 {
-    public Sample[] Samples { get; } = new Sample[3];
+    public Sample[] Samples { get; set; } = new Sample[3];
 
     public string Target { get; }
     public int Eta { get; }
@@ -259,6 +265,8 @@ public class Robot
     public int ExpertiseC { get; }
     public int ExpertiseD { get; }
     public int ExpertiseE { get; }
+
+    public int[] Storage { get; }
 
     public Robot(string[] inputs)
     {
@@ -275,12 +283,49 @@ public class Robot
         ExpertiseC = int.Parse(inputs[10]);
         ExpertiseD = int.Parse(inputs[11]);
         ExpertiseE = int.Parse(inputs[12]);
+
+        Storage = new int[] {StorageA, StorageB, StorageC, StorageD, StorageE };
     }
 }
+
+
+public class Sample
+{
+    public int SampleId { get; }
+    public int CarriedBy { get; }
+    public int Rank { get; }
+    public string ExpertiseGain { get; }
+    public int Health { get; }
+    public int CostA { get; }
+    public int CostB { get; }
+    public int CostC { get; }
+    public int CostD { get; }
+    public int CostE { get; }
+
+    public int[] Cost { get; }
+
+    public Sample(string[] inputs)
+    {
+        SampleId = int.Parse(inputs[0]);
+        CarriedBy = int.Parse(inputs[1]);
+        Rank = int.Parse(inputs[2]);
+        ExpertiseGain = inputs[3];
+        Health = int.Parse(inputs[4]);
+        CostA = int.Parse(inputs[5]);
+        CostB = int.Parse(inputs[6]);
+        CostC = int.Parse(inputs[7]);
+        CostD = int.Parse(inputs[8]);
+        CostE = int.Parse(inputs[9]);
+
+        Cost = new int[]{CostA, CostB, CostC, CostD, CostE};
+    }
+}
+
 
 public enum Modules
 {
     LABORATORY = 0,
     MOLECULES,
-    DIAGNOSIS
+    DIAGNOSIS,
+    SAMPLES
 }
