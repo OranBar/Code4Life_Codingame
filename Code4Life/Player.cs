@@ -6,8 +6,6 @@ using System.Text;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq.Expressions;
-using System.Security.Policy;
-using System.Security.Principal;
 
 /**
  * Bring data on patient samples from the diagnosis machine to the laboratory with enough molecules to produce medicine!
@@ -103,110 +101,110 @@ public class MyHero
 
     private static Random RNG = new Random();
 
-    private Sample targetSample;
+    private int targetSampleID = -1;
 
     public string Think(Game game)
     {
+        Sample targetSample = game.samples.FirstOrDefault(s => s!=null && s.SampleId == targetSampleID);
         Robot myRobot = game.robots[0];
         Robot enemyRobot = game.robots[1];
-        RobotCmd cmd;
 
         string command = "";
 
-
-        if (targetSample == null)
+        if (myRobot.HasASample == false)
         {
-            if (myRobot.Samples.Count(s => s != null) == 0)
-            {
-                if (myRobot.Target != Modules.SAMPLES.ToString())
-                {
-                    command = "GOTO " + Modules.SAMPLES;
-                }
-                else
-                {
-                    cmd = RobotCmd.Collect;
-                    command = "connect " + (int) (RNG.Next(2) + 1);
-                }
-            }
-            else
-            {
-                targetSample = myRobot.Samples.First(s => s != null);
-                command = "GOTO " + Modules.MOLECULES;
-            }
+            command = ObtaintSample(myRobot);
+            command += " - Obtaining -";
+        }
+        else if (targetSample == null)
+        {
+            this.targetSampleID = SelectTargetSample(myRobot).SampleId;
+            command = "GOTO " + Modules.DIAGNOSIS;
+            command += " - Selecting -";
+        }
+        else if (targetSample.WasDiagnosed == false)
+        {
+            targetSample.Cost.ToList().ForEach(s => Console.Error.Write(s+" "));
+            command = "connect " + targetSample.SampleId;
+            command += " - Diagnosing -";
         }
         else if (AllMaterialsAcquired(myRobot, targetSample) == false)
         {
-            cmd = RobotCmd.Gather;
+            targetSample.Cost.ToList().ForEach(s => Console.Error.Write(s+" "));
+            command = ObtainMolecules(myRobot, targetSample);
+            command += " - Progressing -";
+        }
+        else
+        {
+            command = ProduceSample(myRobot, targetSample);
+        }
+        return command;
+    }
 
-            if (myRobot.Target != Modules.MOLECULES.ToString())
+    public Sample SelectTargetSample(Robot robot)
+    {
+        return robot.Samples.FirstOrDefault(s => s != null);
+    }
+
+    public string ObtaintSample(Robot robot)
+    {
+        string command = "";
+
+        if (robot.Target != Modules.SAMPLES.ToString())
+        {
+            command = "goto " + Modules.SAMPLES;
+        }
+        else
+        {
+            command = "connect " + (RNG.Next(1) + 2);
+        }
+        return command;
+    }
+
+    public string ObtainMolecules(Robot myRobot, Sample sample)
+    {
+        string command = "";
+        if (myRobot.Target != Modules.MOLECULES.ToString())
+        {
+            command = "GOTO " + Modules.MOLECULES;
+        }
+        else
+        {
+            if (sample.WasDiagnosed == false)
             {
-                command = "GOTO " + Modules.MOLECULES;
+                command = "connect " + sample.SampleId;
             }
-            else
+            else if(AllMaterialsAcquired(myRobot, sample) == false)
             {
                 foreach (var moleculeType in Enum.GetValues(typeof(MoleculeType)))
                 {
                     int available = myRobot.Storage[(int) moleculeType];
-                    int needed = targetSample.Cost[(int) moleculeType];
-                    if (available <= needed)
+                    int needed = sample.Cost[(int) moleculeType];
+                    if (available < needed)
                     {
                         command = "connect "+ moleculeType;
-                        command += available + "/" + needed;
-                        command += " target id is " +targetSample.SampleId;
+                        command += " "+available + "/" + needed;
+                        command += " target id is " +sample.SampleId;
+                        break;
                     }
                 }
-//
-//
-//                if (myRobot.StorageA <= targetSample.CostA)
-//                {
-//                    command = "connect A ";
-//                    command += myRobot.StorageA + " / " + targetSample.CostA;
-//                    command += " target id is " +targetSample.SampleId;
-//                }
-//                else
-//                if (myRobot.StorageB <= targetSample.CostB)
-//                {
-//                    command = "connect B ";
-//                    command += myRobot.StorageB + " / " + targetSample.CostB;
-//                    command += " target id is " +targetSample.SampleId;
-//                }
-//                else
-//                if (myRobot.StorageC <= targetSample.CostC)
-//                {
-//                    command = "connect C ";
-//                    command += myRobot.StorageC + " / " + targetSample.CostC;
-//                    command += " target id is " +targetSample.SampleId;
-//
-//                }
-//                else
-//                if (myRobot.StorageD <= targetSample.CostD)
-//                {
-//                    command = "connect D ";
-//                    command += myRobot.StorageD + " / " + targetSample.CostD;
-//                    command += " target id is " +targetSample.SampleId;
-//                }
-//                else
-//                if (myRobot.StorageE <= targetSample.CostE)
-//                {
-//                    command = "connect E ";
-//                    command += myRobot.StorageE + " / " + targetSample.CostE;
-//                    command += " target id is " +targetSample.SampleId;
-//                }
             }
-        } else
-        {
-            if (myRobot.Target != Modules.LABORATORY.ToString())
-            {
-                command = "GOTO " + Modules.LABORATORY;
-            }
-            else
-            {
-                command = "connect " + targetSample.SampleId;
-                targetSample = null;
-            }
-            cmd = RobotCmd.Produce;
         }
+        return command;
+    }
 
+    public string ProduceSample(Robot myRobot, Sample sample)
+    {
+        string command = "";
+        if (myRobot.Target != Modules.LABORATORY.ToString())
+        {
+            command = "goto " + Modules.LABORATORY;
+        }
+        else
+        {
+            command = "connect " + sample.SampleId;
+            targetSampleID = -1;
+        }
         return command;
     }
 
@@ -243,14 +241,16 @@ public class Game
         this.robots = robots;
         this.samples = samples;
 
-        robots[0].Samples = samples.Where(s => s.CarriedBy == 1).ToArray();
-        robots[1].Samples = samples.Where(s => s.CarriedBy == 0).ToArray();
+        robots[0].Samples = samples.Where(s => s.CarriedBy == 0).ToArray();
+        robots[1].Samples = samples.Where(s => s.CarriedBy == 1).ToArray();
     }
 }
 
 public class Robot
 {
     public Sample[] Samples { get; set; } = new Sample[3];
+
+    public bool HasASample => Samples.Count(s => s != null) > 0;
 
     public string Target { get; }
     public int Eta { get; }
@@ -304,6 +304,8 @@ public class Sample
 
     public int[] Cost { get; }
 
+    public bool WasDiagnosed => CostA + CostB + CostC + CostD + CostE > 0;
+
     public Sample(string[] inputs)
     {
         SampleId = int.Parse(inputs[0]);
@@ -319,6 +321,8 @@ public class Sample
 
         Cost = new int[]{CostA, CostB, CostC, CostD, CostE};
     }
+
+
 }
 
 
