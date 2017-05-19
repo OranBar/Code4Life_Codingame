@@ -5,7 +5,6 @@ using System.IO;
 using System.Text;
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq.Expressions;
 
 /**
  * Bring data on patient samples from the diagnosis machine to the laboratory with enough molecules to produce medicine!
@@ -14,11 +13,10 @@ public class Player
 {
     static void Main(string[] args)
     {
-        MyHero myHero = new MyHero();
-
-
         string[] inputs;
         int projectCount = int.Parse(Console.ReadLine());
+        ScienceProject[] projects = new ScienceProject[projectCount];
+        Console.Error.WriteLine("My Science Projects");
         for (int i = 0; i < projectCount; i++)
         {
             inputs = Console.ReadLine().Split(' ');
@@ -27,7 +25,11 @@ public class Player
             int c = int.Parse(inputs[2]);
             int d = int.Parse(inputs[3]);
             int e = int.Parse(inputs[4]);
+            Console.Error.WriteLine($"Project {i} : {a} {b} {c} {d} {e}");
+            projects[i] = new ScienceProject(a, b, c, d, e);
         }
+
+        Gundam gundam = new Gundam(projects);
 
         // game loop
         while (true)
@@ -37,185 +39,246 @@ public class Player
             for (int i = 0; i < 2; i++)
             {
                 inputs = Console.ReadLine().Split(' ');
-                string target = inputs[0];
-                int eta = int.Parse(inputs[1]);
-                int score = int.Parse(inputs[2]);
-                int storageA = int.Parse(inputs[3]);
-                int storageB = int.Parse(inputs[4]);
-                int storageC = int.Parse(inputs[5]);
-                int storageD = int.Parse(inputs[6]);
-                int storageE = int.Parse(inputs[7]);
-                int expertiseA = int.Parse(inputs[8]);
-                int expertiseB = int.Parse(inputs[9]);
-                int expertiseC = int.Parse(inputs[10]);
-                int expertiseD = int.Parse(inputs[11]);
-                int expertiseE = int.Parse(inputs[12]);
-
                 Robot robot = new Robot(inputs);
                 robots[i] = robot;
             }
+
             inputs = Console.ReadLine().Split(' ');
             int availableA = int.Parse(inputs[0]);
             int availableB = int.Parse(inputs[1]);
             int availableC = int.Parse(inputs[2]);
             int availableD = int.Parse(inputs[3]);
             int availableE = int.Parse(inputs[4]);
+            Dictionary<MoleculeType, int> availableMolecules = new Dictionary<MoleculeType, int>();
+            availableMolecules[MoleculeType.A] = availableA;
+            availableMolecules[MoleculeType.B] = availableB;
+            availableMolecules[MoleculeType.C] = availableC;
+            availableMolecules[MoleculeType.D] = availableD;
+            availableMolecules[MoleculeType.E] = availableE;
+
+
             int sampleCount = int.Parse(Console.ReadLine());
+
+
 
             Sample[] samples = new Sample[sampleCount];
 
             for (int i = 0; i < sampleCount; i++)
             {
                 inputs = Console.ReadLine().Split(' ');
-                int sampleId = int.Parse(inputs[0]);
-                int carriedBy = int.Parse(inputs[1]);
-                int rank = int.Parse(inputs[2]);
-                string expertiseGain = inputs[3];
-                int health = int.Parse(inputs[4]);
-                int costA = int.Parse(inputs[5]);
-                int costB = int.Parse(inputs[6]);
-                int costC = int.Parse(inputs[7]);
-                int costD = int.Parse(inputs[8]);
-                int costE = int.Parse(inputs[9]);
-
+//                int sampleId = int.Parse(inputs[0]);
+//                int carriedBy = int.Parse(inputs[1]);
+//                int rank = int.Parse(inputs[2]);
+//                string expertiseGain = inputs[3];
+//                int health = int.Parse(inputs[4]);
+//                int costA = int.Parse(inputs[5]);
+//                int costB = int.Parse(inputs[6]);
+//                int costC = int.Parse(inputs[7]);
+//                int costD = int.Parse(inputs[8]);
+//                int costE = int.Parse(inputs[9]);
                 Sample sample = new Sample(inputs);
                 samples[i] = sample;
             }
 
-            Game game = new Game(robots, samples);
-            string myAction = myHero.Think(game);
+            Game game = new Game(robots, samples, availableMolecules);
+            string myAction = gundam.Think(game);
             Console.WriteLine(myAction);
         }
     }
 }
 
-public class MyHero
+public class Gundam
 {
-    public enum RobotCmd
-    {
-        None = -1,
-        Collect,
-        Gather,
-        Produce
-    }
+//    public enum RobotCmd
+//    {
+//        None = -1,
+//        Collect,
+//        Gather,
+//        Produce
+//    }
 
     private static Random RNG = new Random();
 
     private int targetSampleID = -1;
+    private List<ScienceProject> MyProjects { get; }
+
+    private bool refillSamples = true;
+
+    private List<Sample> processedSamples = new List<Sample>();
+
+    public Gundam(ScienceProject[] projects)
+    {
+        MyProjects = projects.ToList();
+    }
 
     public string Think(Game game)
     {
-        Sample targetSample = game.samples.FirstOrDefault(s => s!=null && s.SampleId == targetSampleID);
+        Sample targetSample = game.samples.FirstOrDefault(s => s.SampleId == targetSampleID);
         Robot myRobot = game.robots[0];
         Robot enemyRobot = game.robots[1];
 
         string command = "";
 
-        if (myRobot.HasASample == false)
+        if (myRobot.Samples.Length == 0)
         {
-            command = ObtaintSample(myRobot);
+            Console.Error.WriteLine("Refilling");
+            refillSamples = true;
+        }
+        else if (myRobot.Samples.Length == 3)
+        {
+            Console.Error.WriteLine("Stop Refilling");
+            refillSamples = false;
+        }
+
+        if (refillSamples)
+        {
+            if (myRobot.Target != Modules.SAMPLES.ToString() || myRobot.Eta > 0)
+            {
+                return "goto " + Modules.SAMPLES;
+            }
+
+            command = GetASample(myRobot);
             command += " - Obtaining -";
+
+            return command;
         }
-        else if (targetSample == null)
+
+        //From here on I assume I have a target sample
+        if (myRobot.Samples.Count(s => s.WasDiagnosed == false) > 0)
         {
-            this.targetSampleID = SelectTargetSample(myRobot).SampleId;
-            command = "GOTO " + Modules.DIAGNOSIS;
-            command += " - Selecting -";
-        }
-        else if (targetSample.WasDiagnosed == false)
-        {
-            targetSample.Cost.ToList().ForEach(s => Console.Error.Write(s+" "));
-            command = "connect " + targetSample.SampleId;
-            command += " - Diagnosing -";
+            Console.Error.WriteLine(targetSample);
+
+            if (myRobot.Target != Modules.DIAGNOSIS.ToString() || myRobot.Eta > 0)
+            {
+                return "goto " + Modules.DIAGNOSIS;
+            }
+
+            command = DiagnoseAllSamples(myRobot);
+            command += " - Diagnosing All-";
+
+            Func<Robot, bool> allSamplesDiagoned = robot => robot.Samples.Count(s => s.WasDiagnosed == false) == 1;
+
+            if (allSamplesDiagoned(myRobot))
+            {
+                SelectNewTargetSample(myRobot);
+            }
+
         }
         else if (AllMaterialsAcquired(myRobot, targetSample) == false)
         {
-            targetSample.Cost.ToList().ForEach(s => Console.Error.Write(s+" "));
-            command = ObtainMolecules(myRobot, targetSample);
+            Console.Error.WriteLine(targetSample);
+
+            if (myRobot.Target != Modules.MOLECULES.ToString() || myRobot.Eta > 0)
+            {
+                return "GOTO " + Modules.MOLECULES;
+            }
+
+            MoleculeType moleculeType = ChooseMoleculeToGather(myRobot, targetSample);
+            command = ObtainMolecules(game, myRobot, moleculeType);
             command += " - Progressing -";
         }
         else
         {
+            if (myRobot.Target != Modules.LABORATORY.ToString() || myRobot.Eta > 0)
+            {
+                return "goto " + Modules.LABORATORY;
+            }
+
             command = ProduceSample(myRobot, targetSample);
+            myRobot.Samples = myRobot.Samples.Where(s => s != targetSample).ToArray();
+            SelectNewTargetSample(myRobot);
+
+            Console.Error.WriteLine("Sample produced");
         }
         return command;
     }
 
-    public Sample SelectTargetSample(Robot robot)
+    private void SelectNewTargetSample(Robot robot)
     {
-        return robot.Samples.FirstOrDefault(s => s != null);
+        Sample newTargetSample = robot.Samples.FirstOrDefault(s => s.WasDiagnosed);
+        this.targetSampleID = newTargetSample?.SampleId ?? -1;
     }
 
-    public string ObtaintSample(Robot robot)
+    public string GetASample(Robot robot)
     {
         string command = "";
+        command = "connect 2";
+//        Console.Error.WriteLine("Molecule expertise "+robot.moleculeExpertise.Values.Sum());
+//        if (robot.moleculeExpertise.Values.Sum() <= 2)
+//        {
+//            command = "connect 1";
+//        }
+//        else
+//        {
+//        }
+        return command;
+    }
+    //here
 
-        if (robot.Target != Modules.SAMPLES.ToString())
-        {
-            command = "goto " + Modules.SAMPLES;
-        }
-        else
-        {
-            command = "connect " + (RNG.Next(1) + 2);
-        }
+    public string DiagnoseAllSamples(Robot robot)
+    {
+        string command = "connect " + robot.Samples.First(s => s.WasDiagnosed == false).SampleId;
         return command;
     }
 
-    public string ObtainMolecules(Robot myRobot, Sample sample)
+    private MoleculeType ChooseMoleculeToGather(Robot myRobot, Sample targetSample)
     {
-        string command = "";
-        if (myRobot.Target != Modules.MOLECULES.ToString())
+        MoleculeType targetMolecule = MoleculeType.None;
+        int needed = 0;
+        foreach (MoleculeType moleculeType in MoleculeTypeEx.Enumerate())
         {
-            command = "GOTO " + Modules.MOLECULES;
+            int MoleculesNeeded = targetSample.MoleculesNeeded[moleculeType] - myRobot.moleculeExpertise[moleculeType];
+            if (MoleculesNeeded <= myRobot.moleculesOwned[moleculeType])
+            {
+                continue;
+            }
+
+            if (MoleculesNeeded > needed)
+            {
+                targetMolecule = moleculeType;
+                needed = targetSample.MoleculesNeeded[moleculeType];
+            }
+        }
+        return targetMolecule;
+    }
+
+    public string ObtainMolecules(Game game, Robot myRobot, MoleculeType molecule)
+    {
+        string command = "wait";
+        if (molecule == MoleculeType.None)
+        {
+            return command;
+        }
+
+
+        if (game.availableMolecules[molecule] > 0)
+        {
+            command = "connect " + molecule;
         }
         else
         {
-            if (sample.WasDiagnosed == false)
-            {
-                command = "connect " + sample.SampleId;
-            }
-            else if(AllMaterialsAcquired(myRobot, sample) == false)
-            {
-                foreach (var moleculeType in Enum.GetValues(typeof(MoleculeType)))
-                {
-                    int available = myRobot.Storage[(int) moleculeType];
-                    int needed = sample.Cost[(int) moleculeType];
-                    if (available < needed)
-                    {
-                        command = "connect "+ moleculeType;
-                        command += " "+available + "/" + needed;
-                        command += " target id is " +sample.SampleId;
-                        break;
-                    }
-                }
-            }
+            Console.Error.WriteLine("Am I really here?");
+//            targetSampleID = new Random().Next(myRobot.Samples.Length);
         }
+
         return command;
     }
 
     public string ProduceSample(Robot myRobot, Sample sample)
     {
-        string command = "";
-        if (myRobot.Target != Modules.LABORATORY.ToString())
-        {
-            command = "goto " + Modules.LABORATORY;
-        }
-        else
-        {
-            command = "connect " + sample.SampleId;
-            targetSampleID = -1;
-        }
-        return command;
+        targetSampleID = -1;
+        processedSamples.Add(sample);
+        return "connect " + sample.SampleId;
     }
 
     public bool AllMaterialsAcquired(Robot robot, Sample sample)
     {
         bool result = true;
-        result = result && robot.StorageA >= sample.CostA;
-        result = result && robot.StorageB >= sample.CostB;
-        result = result && robot.StorageC >= sample.CostC;
-        result = result && robot.StorageD >= sample.CostD;
-        result = result && robot.StorageE >= sample.CostE;
+        result = result && robot.StorageA + robot.ExpertiseA >= sample.CostA;
+        result = result && robot.StorageB + robot.ExpertiseB >= sample.CostB;
+        result = result && robot.StorageC + robot.ExpertiseC >= sample.CostC;
+        result = result && robot.StorageD + robot.ExpertiseD >= sample.CostD;
+        result = result && robot.StorageE + robot.ExpertiseE >= sample.CostE;
         return result;
     }
 
@@ -223,6 +286,7 @@ public class MyHero
 
 public enum MoleculeType
 {
+    None = -1,
     A = 0,
     B,
     C,
@@ -230,16 +294,25 @@ public enum MoleculeType
     E
 }
 
+public static class MoleculeTypeEx
+{
+    public static IEnumerable<MoleculeType> Enumerate()
+    {
+        return Enum.GetValues(typeof(MoleculeType)).Cast<MoleculeType>().Where(m => m != MoleculeType.None);
+    }
+}
 public class Game
 {
 
     public Robot[] robots;
     public Sample[] samples;
+    public Dictionary<MoleculeType, int> availableMolecules;
 
-    public Game(Robot[] robots, Sample[] samples)
+    public Game(Robot[] robots, Sample[] samples, Dictionary<MoleculeType, int> availableMolecules)
     {
         this.robots = robots;
         this.samples = samples;
+        this.availableMolecules = availableMolecules;
 
         robots[0].Samples = samples.Where(s => s.CarriedBy == 0).ToArray();
         robots[1].Samples = samples.Where(s => s.CarriedBy == 1).ToArray();
@@ -267,6 +340,8 @@ public class Robot
     public int ExpertiseE { get; }
 
     public int[] Storage { get; }
+    public Dictionary<MoleculeType, int> moleculesOwned;
+    public Dictionary<MoleculeType, int> moleculeExpertise = new Dictionary<MoleculeType, int>();
 
     public Robot(string[] inputs)
     {
@@ -285,6 +360,19 @@ public class Robot
         ExpertiseE = int.Parse(inputs[12]);
 
         Storage = new int[] {StorageA, StorageB, StorageC, StorageD, StorageE };
+        moleculesOwned = new Dictionary<MoleculeType, int>();
+        moleculesOwned[MoleculeType.A] = StorageA;
+        moleculesOwned[MoleculeType.B] = StorageB;
+        moleculesOwned[MoleculeType.C] = StorageC;
+        moleculesOwned[MoleculeType.D] = StorageD;
+        moleculesOwned[MoleculeType.E] = StorageE;
+
+        moleculeExpertise[MoleculeType.A] = ExpertiseA;
+        moleculeExpertise[MoleculeType.B] = ExpertiseB;
+        moleculeExpertise[MoleculeType.C] = ExpertiseC;
+        moleculeExpertise[MoleculeType.D] = ExpertiseD;
+        moleculeExpertise[MoleculeType.E] = ExpertiseE;
+
     }
 }
 
@@ -303,6 +391,7 @@ public class Sample
     public int CostE { get; }
 
     public int[] Cost { get; }
+    public Dictionary<MoleculeType, int> MoleculesNeeded = new Dictionary<MoleculeType, int>();
 
     public bool WasDiagnosed => CostA + CostB + CostC + CostD + CostE > 0;
 
@@ -320,11 +409,37 @@ public class Sample
         CostE = int.Parse(inputs[9]);
 
         Cost = new int[]{CostA, CostB, CostC, CostD, CostE};
+        MoleculesNeeded[MoleculeType.A] = CostA;
+        MoleculesNeeded[MoleculeType.B] = CostB;
+        MoleculesNeeded[MoleculeType.C] = CostC;
+        MoleculesNeeded[MoleculeType.D] = CostD;
+        MoleculesNeeded[MoleculeType.E] = CostE;
+
+        Console.Error.WriteLine("Sample: "+SampleId+" Total Cost is "+Cost.Sum()+" Health is "+Health);
     }
 
-
+    public override string ToString()
+    {
+        return Cost.Aggregate("", (s, agg) => s + " " + agg);
+//        return Cost.ToList().ForEach(s => Console.Error.Write(s+" "));
+    }
 }
 
+public class ScienceProject
+{
+    public Dictionary<MoleculeType, int> MoleculeExpertiseTargets { get; set; }
+
+    public ScienceProject(int a, int b, int c, int d, int e)
+    {
+
+        this.MoleculeExpertiseTargets = new Dictionary<MoleculeType, int>();
+        MoleculeExpertiseTargets[MoleculeType.A] = a;
+        MoleculeExpertiseTargets[MoleculeType.B] = b;
+        MoleculeExpertiseTargets[MoleculeType.C] = c;
+        MoleculeExpertiseTargets[MoleculeType.D] = d;
+        MoleculeExpertiseTargets[MoleculeType.E] = e;
+    }
+}
 
 public enum Modules
 {
